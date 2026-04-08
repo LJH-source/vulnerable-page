@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SECURE-LAB: SQL Injection 교육용 모의 사이트</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --danger-color: #e74c3c;
+            --success-color: #27ae60;
+            --accent-color: #3498db;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+
+        header {
+            text-align: center;
+            border-bottom: 2px solid var(--primary-color);
+            margin-bottom: 30px;
+            padding-bottom: 10px;
+        }
+
+        .role-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            margin: 5px;
+            color: white;
+        }
+
+        .kim-badge { background: #34495e; } /* 김철통 부장 */
+        .hong-badge { background: #e67e22; } /* 홍길동 대리 */
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .box {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        h3 { margin-top: 0; color: var(--primary-color); }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:hover { opacity: 0.9; }
+
+        .monitor {
+            margin-top: 30px;
+            background: #282c34;
+            color: #61dafb;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', Courier, monospace;
+            overflow-x: auto;
+        }
+
+        .sql-query { color: #f8c555; font-weight: bold; }
+        .comment { color: #7f8c8d; font-style: italic; }
+        .vulnerable { color: var(--danger-color); }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 0.9rem;
+        }
+
+        table, th, td { border: 1px solid #444; padding: 8px; text-align: left; }
+        th { background: #333; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>🛡️ 하네스 엔지니어링 웹 보안 훈련소</h1>
+        <div>
+            <span class="role-badge kim-badge">감독관: 김철통 부장 (RDB 전문가)</span>
+            <span class="role-badge hong-badge">공격 설계: 홍길동 대리 (Hadoop 전문가)</span>
+        </div>
+    </header>
+
+    <div class="grid">
+        <div class="box">
+            <h3>📝 사용자 등록 (정상 절차)</h3>
+            <input type="text" id="regId" placeholder="아이디 입력">
+            <input type="password" id="regPw" placeholder="비밀번호 입력">
+            <button onclick="register()">가입하기</button>
+            <p style="font-size: 0.8rem; color: #666;">* 김 부장: "DB 인덱스를 고려해 ID는 고유해야 합니다."</p>
+        </div>
+
+        <div class="box" style="border-color: var(--danger-color);">
+            <h3>🔓 취약한 로그인 (SQLi 체험)</h3>
+            <input type="text" id="loginId" placeholder="ID (예: ' OR '1'='1)">
+            <input type="password" id="loginPw" placeholder="PW">
+            <button style="background: var(--danger-color);" onclick="login()">로그인 시도</button>
+            <p style="font-size: 0.8rem; color: #666;">* 홍 대리: "쿼리문을 직접 조작해 관리자 권한을 따보세요!"</p>
+        </div>
+    </div>
+
+    <div class="monitor" id="monitor">
+        <div>// 보안관제 시스템 모니터링 중...</div>
+        <div id="queryLog" style="margin-top: 10px;">대기 중...</div>
+    </div>
+
+    <div style="margin-top: 20px;">
+        <h3>📊 가상 데이터베이스(Users Table) 현황</h3>
+        <table id="userTable">
+            <thead>
+                <tr>
+                    <th>UID</th>
+                    <th>ID</th>
+                    <th>PW</th>
+                    <th>Role</th>
+                </tr>
+            </thead>
+            <tbody id="userTableBody">
+                </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // 가상 데이터베이스 (김철통 부장이 초기화함)
+    let db = [
+        { uid: 1, id: 'admin', pw: 'p@ssw0rd123', role: 'ADMIN' },
+        { uid: 2, id: 'guest', pw: 'guest123', role: 'USER' }
+    ];
+
+    // 초기 테이블 렌더링
+    function updateTable() {
+        const tbody = document.getElementById('userTableBody');
+        tbody.innerHTML = '';
+        db.forEach(user => {
+            const row = `<tr>
+                <td>${user.uid}</td>
+                <td>${user.id}</td>
+                <td>${user.pw}</td>
+                <td>${user.role}</td>
+            </tr>`;
+            tbody.innerHTML += row;
+        });
+    }
+
+    function logQuery(query, status, message) {
+        const logArea = document.getElementById('queryLog');
+        const color = status === 'SUCCESS' ? '#27ae60' : '#e74c3c';
+        logArea.innerHTML = `
+            <div class="sql-query">EXECUTING SQL: ${query}</div>
+            <div style="color: ${color}">STATUS: ${status}</div>
+            <div class="comment">// ${message}</div>
+        `;
+    }
+
+    // 회원가입 기능 (홍 대리가 추가한 기능)
+    function register() {
+        const id = document.getElementById('regId').value;
+        const pw = document.getElementById('regPw').value;
+
+        if(!id || !pw) return alert("값을 입력하세요.");
+        
+        const newUid = db.length + 1;
+        db.push({ uid: newUid, id: id, pw: pw, role: 'USER' });
+        
+        logQuery(`INSERT INTO users (uid, id, pw, role) VALUES (${newUid}, '${id}', '${pw}', 'USER')`, 
+                 'SUCCESS', '김 부장: "새로운 레코드가 인덱스에 추가되었습니다."');
+        updateTable();
+    }
+
+    // SQL Injection 취약점이 있는 로그인 로직
+    function login() {
+        const id = document.getElementById('loginId').value;
+        const pw = document.getElementById('loginPw').value;
+
+        // 실제 취약한 쿼리 생성 방식 시뮬레이션
+        const rawQuery = `SELECT * FROM users WHERE id = '${id}' AND pw = '${pw}'`;
+        
+        let foundUser = null;
+        let isVulnerable = false;
+
+        try {
+            // SQL Injection 논리 구현: ' OR '1'='1 시뮬레이션
+            // 실제 서버라면 문자열 결합으로 인해 쿼리 구조가 바뀜
+            if (id.includes("' OR '1'='1") || pw.includes("' OR '1'='1")) {
+                foundUser = db[0]; // 무조건 첫 번째 계정(관리자) 반환
+                isVulnerable = true;
+            } else {
+                foundUser = db.find(u => u.id === id && u.pw === pw);
+            }
+
+            if (foundUser) {
+                const msg = isVulnerable ? 
+                    "홍 대리: '대박! SQL Injection 성공! 관리자로 로그인되었습니다.'" : 
+                    "김 부장: '정상적인 인증 절차를 통과하셨습니다.'";
+                logQuery(rawQuery, 'SUCCESS', msg);
+                alert(`환영합니다, ${foundUser.id}(${foundUser.role})님!`);
+            } else {
+                logQuery(rawQuery, 'FAILED', "김 부장: '일치하는 사용자가 없습니다. 침입 시도인지 확인하십시오.'");
+                alert("로그인 실패!");
+            }
+        } catch (e) {
+            logQuery(rawQuery, 'ERROR', "시스템 오류 발생");
+        }
+    }
+
+    // 초기 실행
+    updateTable();
+</script>
+
+</body>
+</html>
